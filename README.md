@@ -17,7 +17,7 @@ A server-wide transparency/audit plugin for Spigot/Paper/Bukkit-compatible Minec
 - `/ta status`, `/ta stats`, `/ta recent [1-25]`, `/ta list`, `/ta reload`, `/ta verify`, and `/ta help` for the exact owner.
 - No owner command exists to disable the audit, clear the audit log, or bypass sensitive alerts.
 - GitHub Actions CI that runs on **every branch push, every tag push, pull requests, merge-queue runs, and manual dispatch**.
-- GitHub Actions uses current verified action releases: checkout v7.0.1, setup-java v6.0.1, setup-node v7.0.1, upload-artifact v7.0.1, and attest v4.2.2.
+- GitHub Actions uses current verified action releases: checkout v7.0.1, setup-java v6.0.1, setup-node v7.0.0, upload-artifact v7.0.1, and attest v4.2.2.
 - Node.js 26 is used for repository tooling checks; it is not a runtime dependency of the Minecraft plugin.
 - Dependabot updates Maven and GitHub Actions dependencies weekly.
 - SHA-256 release checksums and GitHub artifact attestations.
