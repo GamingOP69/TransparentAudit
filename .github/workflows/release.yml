@@ -1,27 +1,24 @@
 name: Release
 
 on:
-  # Normal release path: create/push a tag named vMAJOR.MINOR.PATCH.
+  # Automatic release when a version tag is pushed manually.
   push:
     tags:
       - 'v*.*.*'
 
-  # PC-free release path: start this workflow from GitHub Actions in a browser/mobile app,
-  # enter a version such as v1.2.1, and the workflow creates the tag and release for you.
+  # PC/mobile-friendly release path.
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Release tag, e.g. v1.2.1'
+        description: 'Release version/tag, e.g. v1.2.0 or 1.2.0'
         required: true
         type: string
+
       prerelease:
         description: 'Mark the GitHub Release as a pre-release'
         required: true
         default: false
         type: boolean
-
-env:
-  PLUGIN_VERSION: '1.2.0'
 
 permissions:
   contents: write
@@ -30,54 +27,158 @@ permissions:
   artifact-metadata: write
 
 concurrency:
-  group: release-${{ github.event.inputs.release_tag || github.ref_name }}
+  group: release-${{ github.event_name }}-${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
   prepare-tag:
     name: Prepare release tag
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+
+    # When workflow_dispatch creates a tag, that tag push starts another
+    # Release workflow. Ignore that automatic duplicate run because this
+    # workflow_dispatch run is already doing the release itself.
+    if: github.event_name != 'push' || github.actor != 'github-actions[bot]'
+
+    runs-on: ubuntu-24.04
+
+    outputs:
+      release_tag: ${{ steps.meta.outputs.release_tag }}
+      plugin_version: ${{ steps.meta.outputs.plugin_version }}
+
     steps:
-      - name: Checkout default branch
+      - name: Checkout release source
         uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
 
-      - name: Validate release tag
+      - name: Resolve and validate release tag
+        id: meta
         shell: bash
+        env:
+          INPUT_TAG: ${{ inputs.release_tag }}
         run: |
           set -euo pipefail
-          tag='${{ inputs.release_tag }}'
-          [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
-            echo "Invalid tag: $tag (expected vMAJOR.MINOR.PATCH)"
-            exit 1
-          }
-          if git rev-parse "$tag" >/dev/null 2>&1; then
-            echo "Tag $tag already exists."
+
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            tag="$INPUT_TAG"
+          else
+            tag="$GITHUB_REF_NAME"
+          fi
+
+          # Allow both:
+          #   1.2.0
+          #   v1.2.0
+          if [[ "$tag" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            tag="v$tag"
+          fi
+
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid tag: $tag"
+            echo "Expected MAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH"
             exit 1
           fi
 
-      - name: Create and push tag
+          version="${tag#v}"
+
+          echo "Release tag: $tag"
+          echo "Plugin version: $version"
+
+          echo "release_tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "plugin_version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Verify project version matches release
         shell: bash
+        env:
+          PLUGIN_VERSION: ${{ steps.meta.outputs.plugin_version }}
         run: |
           set -euo pipefail
+
+          pom_version="$(
+            perl -0ne '
+              if (/<artifactId>transparent-audit<\/artifactId>\s*<version>([^<]+)<\/version>/s) {
+                print $1
+              }
+            ' pom.xml
+          )"
+
+          plugin_yml_version="$(
+            sed -n 's/^version:[[:space:]]*//p' \
+              src/main/resources/plugin.yml | head -n 1
+          )"
+
+          echo "POM version:        $pom_version"
+          echo "plugin.yml version: $plugin_yml_version"
+          echo "Release version:    $PLUGIN_VERSION"
+
+          [[ "$pom_version" == "$PLUGIN_VERSION" ]] || {
+            echo "pom.xml version does not match release tag."
+            exit 1
+          }
+
+          [[ "$plugin_yml_version" == "$PLUGIN_VERSION" ]] || {
+            echo "plugin.yml version does not match release tag."
+            exit 1
+          }
+
+      - name: Replace existing release and tag
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.meta.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+
+          echo "Preparing reusable tag: $RELEASE_TAG"
+
+          # Delete the existing GitHub Release, if one exists.
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Deleting existing GitHub Release: $RELEASE_TAG"
+            gh release delete "$RELEASE_TAG" --yes
+          else
+            echo "No existing GitHub Release found."
+          fi
+
+          # Delete the existing remote tag, if one exists.
+          if git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Deleting existing remote tag: $RELEASE_TAG"
+            git push origin --delete "$RELEASE_TAG"
+          else
+            echo "No existing remote tag found."
+          fi
+
+          # Delete a local copy if present.
+          git tag -d "$RELEASE_TAG" >/dev/null 2>&1 || true
+
+      - name: Create and push release tag
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ steps.meta.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git tag -a '${{ inputs.release_tag }}' -m 'TransparentAudit ${{ inputs.release_tag }}'
-          git push origin '${{ inputs.release_tag }}'
+
+          echo "Creating tag $RELEASE_TAG at commit:"
+          git rev-parse HEAD
+
+          git tag -a "$RELEASE_TAG" -m "TransparentAudit $RELEASE_TAG"
+          git push origin "$RELEASE_TAG"
 
   release:
     name: Build and publish release
     needs: prepare-tag
-    if: always() && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && needs.prepare-tag.result == 'success'))
-    runs-on: ubuntu-latest
+    if: needs.prepare-tag.result == 'success'
+
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout release ref
         uses: actions/checkout@v7.0.1
         with:
-          ref: ${{ github.event_name == 'push' && github.ref_name || inputs.release_tag }}
+          ref: ${{ needs.prepare-tag.outputs.release_tag }}
           fetch-depth: 0
 
       - name: Set up Java 8
@@ -94,18 +195,79 @@ jobs:
           check-latest: true
           package-manager-cache: false
 
+      - name: Print toolchain versions
+        run: |
+          java -version
+          mvn --version
+          node --version
+          npm --version
+
+      - name: Verify release version
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ needs.prepare-tag.outputs.release_tag }}
+          PLUGIN_VERSION: ${{ needs.prepare-tag.outputs.plugin_version }}
+        run: |
+          set -euo pipefail
+
+          echo "Release tag: $RELEASE_TAG"
+          echo "Plugin version: $PLUGIN_VERSION"
+
+          test "$RELEASE_TAG" = "v$PLUGIN_VERSION"
+
+          grep -Fx "version: $PLUGIN_VERSION" \
+            src/main/resources/plugin.yml
+
       - name: Build plugin
-        run: mvn --batch-mode --no-transfer-progress clean package
+        run: |
+          mvn --batch-mode --no-transfer-progress clean package
+
+      - name: Verify built JAR
+        shell: bash
+        env:
+          PLUGIN_VERSION: ${{ needs.prepare-tag.outputs.plugin_version }}
+        run: |
+          set -euo pipefail
+
+          JAR="target/transparent-audit-${PLUGIN_VERSION}.jar"
+
+          test -f "$JAR"
+
+          echo "Built:"
+          ls -lh "$JAR"
+
+          jar tf "$JAR" | grep -Fx 'plugin.yml'
+          jar tf "$JAR" | grep -F \
+            'com/notgamingop/transparentaudit/TransparentAudit.class'
 
       - name: Prepare release files
         shell: bash
+        env:
+          RELEASE_TAG: ${{ needs.prepare-tag.outputs.release_tag }}
+          PLUGIN_VERSION: ${{ needs.prepare-tag.outputs.plugin_version }}
         run: |
           set -euo pipefail
-          RELEASE_TAG='${{ github.event_name == 'push' && github.ref_name || inputs.release_tag }}'
+
+          JAR="target/transparent-audit-${PLUGIN_VERSION}.jar"
+
           mkdir -p dist
-          cp target/transparent-audit-${PLUGIN_VERSION}.jar "dist/TransparentAudit-${RELEASE_TAG}.jar"
-          git archive --format=zip --prefix="TransparentAudit-${RELEASE_TAG}/" HEAD -o "dist/TransparentAudit-${RELEASE_TAG}-source.zip"
-          (cd dist && sha256sum * > SHA256SUMS.txt)
+
+          cp "$JAR" \
+            "dist/TransparentAudit-${RELEASE_TAG}.jar"
+
+          git archive \
+            --format=zip \
+            --prefix="TransparentAudit-${RELEASE_TAG}/" \
+            HEAD \
+            -o "dist/TransparentAudit-${RELEASE_TAG}-source.zip"
+
+          (
+            cd dist
+            sha256sum * > SHA256SUMS.txt
+          )
+
+          echo "Release files:"
+          ls -lh dist/
 
       - name: Attest plugin JAR
         uses: actions/attest@v4.2.2
@@ -120,19 +282,29 @@ jobs:
       - name: Upload release files as workflow artifacts
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: release-${{ github.event_name == 'push' && github.ref_name || inputs.release_tag }}
+          name: release-${{ needs.prepare-tag.outputs.release_tag }}
           path: dist/*
           if-no-files-found: error
 
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.release_tag }}
+          RELEASE_TAG: ${{ needs.prepare-tag.outputs.release_tag }}
           PRERELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease || false }}
+        shell: bash
         run: |
           set -euo pipefail
-          args=("$RELEASE_TAG" dist/* --title "TransparentAudit ${RELEASE_TAG#v}" --generate-notes)
+
+          args=(
+            "$RELEASE_TAG"
+            dist/*
+            --title "TransparentAudit ${RELEASE_TAG#v}"
+            --generate-notes
+            --verify-tag
+          )
+
           if [[ "$PRERELEASE" == "true" ]]; then
             args+=(--prerelease)
           fi
+
           gh release create "${args[@]}"
