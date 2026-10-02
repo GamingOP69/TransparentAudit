@@ -19,10 +19,15 @@
     </properties>
 
     <repositories>
-        <repository>
-            <id>spigot-repo</id>
-            <url>https://hub.spigotmc.org/nexus/content/repositories/snapshots/</url>
-        </repository>
+    <repository>
+        <id>spigot-repo</id>
+        <url>https://hub.spigotmc.org/nexus/content/repositories/snapshots/</url>
+    </repository>
+
+    <repository>
+        <id>aikar</id>
+        <url>https://repo.aikar.co/nexus/content/repositories/aikar/</url>
+    </repository>
     </repositories>
 
     <dependencies>
@@ -33,6 +38,13 @@
             <version>1.8.8-R0.1-SNAPSHOT</version>
             <scope>provided</scope>
         </dependency>
+
+         <dependency>
+    <groupId>net.md-5</groupId>
+    <artifactId>bungeecord-chat</artifactId>
+    <version>1.8-20160221.214602-128</version>
+    <scope>provided</scope>
+          </dependency>
     </dependencies>
 
     <build>
