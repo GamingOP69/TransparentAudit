@@ -2,6 +2,7 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>com.notgamingop</groupId>
@@ -10,28 +11,61 @@
     <packaging>jar</packaging>
 
     <name>TransparentAudit</name>
-    <description>Server-wide command transparency and sensitive-command auditing for Minecraft 1.8.8.</description>
+    <description>
+        Server-wide command transparency and sensitive-command auditing for Minecraft 1.8.8.
+    </description>
     <url>https://github.com/NOTGAMINGOP/TransparentAudit</url>
 
     <properties>
-        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <!-- Keep the plugin compatible with Java 8 / Minecraft 1.8.8. -->
         <maven.compiler.release>8</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
     <repositories>
-    <repository>
-        <id>spigot-repo</id>
-        <url>https://hub.spigotmc.org/nexus/content/repositories/snapshots/</url>
-    </repository>
+        <!-- Spigot API repository. -->
+        <repository>
+            <id>spigot-repo</id>
+            <name>SpigotMC Repository</name>
+            <url>https://hub.spigotmc.org/nexus/content/repositories/snapshots/</url>
+            <releases>
+                <enabled>true</enabled>
+            </releases>
+            <snapshots>
+                <enabled>true</enabled>
+                <updatePolicy>daily</updatePolicy>
+            </snapshots>
+        </repository>
 
-    <repository>
-        <id>aikar</id>
-        <url>https://repo.aikar.co/nexus/content/repositories/aikar/</url>
-    </repository>
+        <!--
+            Spigot 1.8.8's POM references:
+                net.md-5:bungeecord-chat:1.8-SNAPSHOT
+
+            The artifact is no longer reliably available from the Spigot
+            repository, while the Aikar repository still exposes the
+            required 1.8-SNAPSHOT metadata/artifacts.
+        -->
+        <repository>
+            <id>aikar-repo</id>
+            <name>Aikar Repository</name>
+            <url>https://repo.aikar.co/nexus/content/groups/aikar/</url>
+            <releases>
+                <enabled>true</enabled>
+            </releases>
+            <snapshots>
+                <enabled>true</enabled>
+                <updatePolicy>daily</updatePolicy>
+            </snapshots>
+        </repository>
     </repositories>
 
     <dependencies>
-        <!-- Provided by the server at runtime; never bundled into the plugin JAR. -->
+
+        <!--
+            Spigot 1.8.8 API.
+            Provided by the Minecraft server at runtime and therefore
+            intentionally excluded from the final plugin JAR.
+        -->
         <dependency>
             <groupId>org.spigotmc</groupId>
             <artifactId>spigot-api</artifactId>
@@ -39,17 +73,28 @@
             <scope>provided</scope>
         </dependency>
 
-         <dependency>
-    <groupId>net.md-5</groupId>
-    <artifactId>bungeecord-chat</artifactId>
-    <version>1.8-20160221.214602-128</version>
-    <scope>provided</scope>
-          </dependency>
+        <!--
+            Spigot 1.8.8 transitively requires this dependency.
+            Declaring it explicitly allows Maven to resolve it from the
+            Aikar repository when the original Spigot snapshot metadata
+            is unavailable.
+        -->
+        <dependency>
+            <groupId>net.md-5</groupId>
+            <artifactId>bungeecord-chat</artifactId>
+            <version>1.8-SNAPSHOT</version>
+            <scope>provided</scope>
+        </dependency>
+
     </dependencies>
 
     <build>
         <plugins>
-            <!-- Current Maven compiler plugin; release 8 keeps the output compatible with Java 8 servers. -->
+
+            <!--
+                Modern Maven compiler plugin while retaining Java 8
+                bytecode compatibility for Minecraft 1.8.8.
+            -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
@@ -59,6 +104,8 @@
                     <encoding>${project.build.sourceEncoding}</encoding>
                 </configuration>
             </plugin>
+
         </plugins>
     </build>
+
 </project>
