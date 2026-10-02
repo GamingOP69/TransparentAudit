@@ -8,13 +8,13 @@ on:
     tags:
       - '**'
 
-  # Build on every supported PR activity that changes or re-evaluates code.
+  # Build on pull requests.
   pull_request:
 
-  # Build again when a PR enters GitHub's merge queue.
+  # Build when a PR enters GitHub's merge queue.
   merge_group:
 
-  # Lets you run the exact same verification manually from GitHub web/mobile.
+  # Manual verification from GitHub web/mobile.
   workflow_dispatch:
 
 permissions:
@@ -40,7 +40,8 @@ jobs:
           java-version: '8'
           cache: maven
 
-      # Node is not a plugin runtime dependency. It is used only for modern repo tooling checks.
+      # Node is not a plugin runtime dependency.
+      # It is used only for modern repository tooling checks.
       - name: Set up current Node.js
         uses: actions/setup-node@v7.0.0
         with:
@@ -55,23 +56,96 @@ jobs:
           node --version
           npm --version
 
+      - name: Read project version
+        id: project-version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          version="$(mvn --batch-mode --no-transfer-progress \
+            help:evaluate \
+            -Dexpression=project.version \
+            -q \
+            -DforceStdout)"
+
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "Invalid project version: $version"
+            exit 1
+          }
+
+          echo "Project version: $version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "PROJECT_VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Verify version consistency
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          plugin_yml_version="$(
+            sed -n 's/^version:[[:space:]]*//p' \
+              src/main/resources/plugin.yml | head -n 1
+          )"
+
+          echo "pom.xml version:     $PROJECT_VERSION"
+          echo "plugin.yml version: $plugin_yml_version"
+
+          [[ "$PROJECT_VERSION" == "$plugin_yml_version" ]] || {
+            echo "Version mismatch between pom.xml and plugin.yml."
+            exit 1
+          }
+
       - name: Build plugin
-        run: mvn --batch-mode --no-transfer-progress clean package
+        run: |
+          mvn --batch-mode --no-transfer-progress clean package
 
       - name: Verify plugin descriptor
+        shell: bash
         run: |
-          test -f target/transparent-audit-1.2.0.jar
-          jar tf target/transparent-audit-1.2.0.jar | grep -Fx 'plugin.yml'
-          jar tf target/transparent-audit-1.2.0.jar | grep -F 'com/notgamingop/transparentaudit/TransparentAudit.class'
+          set -euo pipefail
+
+          JAR="target/transparent-audit-${PROJECT_VERSION}.jar"
+
+          test -f "$JAR"
+
+          echo "Verifying $JAR"
+
+          jar tf "$JAR" | grep -Fx 'plugin.yml'
+
+          jar tf "$JAR" | grep -F \
+            'com/notgamingop/transparentaudit/TransparentAudit.class'
+
+          descriptor_version="$(
+            unzip -p "$JAR" plugin.yml |
+              sed -n 's/^version:[[:space:]]*//p' |
+              head -n 1
+          )"
+
+          echo "JAR plugin.yml version: $descriptor_version"
+
+          [[ "$PROJECT_VERSION" == "$descriptor_version" ]] || {
+            echo "Version mismatch inside built JAR."
+            exit 1
+          }
 
       - name: Verify Java 8 bytecode
+        shell: bash
         run: |
-          major=$(javap -verbose target/classes/com/notgamingop/transparentaudit/TransparentAudit.class | awk '/major version/ {print $3; exit}')
+          set -euo pipefail
+
+          major="$(
+            javap -verbose \
+              target/classes/com/notgamingop/transparentaudit/TransparentAudit.class |
+              awk '/major version/ {print $3; exit}'
+          )"
+
+          echo "Class-file major version: $major"
+
           test "$major" = "52"
 
       - name: Upload JAR
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: TransparentAudit-1.2.0-${{ github.run_id }}
-          path: target/transparent-audit-1.2.0.jar
+          name: TransparentAudit-${{ steps.project-version.outputs.version }}-${{ github.run_id }}
+          path: target/transparent-audit-${{ steps.project-version.outputs.version }}.jar
           if-no-files-found: error
