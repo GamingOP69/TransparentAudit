@@ -14,7 +14,7 @@
     <description>
         Server-wide command transparency and sensitive-command auditing for Minecraft 1.8.8.
     </description>
-    <url>https://github.com/NOTGAMINGOP/TransparentAudit</url>
+    <url>https://github.com/GamingOP69/TransparentAudit</url>
 
     <properties>
         <!-- Keep the plugin compatible with Java 8 / Minecraft 1.8.8. -->

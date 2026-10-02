@@ -2,7 +2,7 @@ name: TransparentAudit
 main: com.notgamingop.transparentaudit.TransparentAudit
 version: 1.2.0
 author: NOTGAMINGOP
-website: "https://github.com/NOTGAMINGOP/TransparentAudit"
+website: "https://github.com/GamingOP69/TransparentAudit"
 description: Server-wide command transparency, persistent auditing, and sensitive-command alerts for Minecraft 1.8.8.
 commands:
   ta:
