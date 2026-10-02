@@ -1,0 +1,78 @@
+# TransparentAudit 1.2.0
+# Owner username is hard-coded, case-sensitive: NOTGAMINGOP
+# All command auditing remains active; the owner command has no disable/bypass option.
+
+chat:
+  broadcast-all-commands: true
+  player-command-format: "&8[&bAudit&8] &bPLAYER &f%player% &7→ &f%command% &7%state%"
+  server-command-format: "&8[&bAudit&8] &6%source% &f%sender% &7→ &f%command% &7%state%"
+
+events:
+  join-leave:
+    enabled: true
+    join-format: "&8[&bAudit&8] &a+ &f%player% &7joined the server"
+    quit-format: "&8[&bAudit&8] &c- &f%player% &7left the server"
+
+alert:
+  enabled: true
+  chat-message: true
+  title: "&c&l⚠ AUDIT ALERT"
+  subtitle: "&f%source% %player% used &e%command%"
+  chat-format: "&c&l⚠ AUDIT ALERT &7| &f%source% &f%player% &7used &e%command% &7[%state%]"
+  # NOTE_PLING is available in the 1.8.8 Bukkit/Spigot API.
+  sound: "NOTE_PLING"
+  volume: 10.0
+  pitch: 2.0
+  fade-in-ticks: 5
+  stay-ticks: 100
+  fade-out-ticks: 10
+
+file-log:
+  enabled: true
+  recent-memory-limit: 50
+
+# The first word of a command is checked, including namespaced commands such as
+# minecraft:give and essentials:fly. Add/remove labels here as needed for your server.
+sensitive-commands:
+  - give
+  - i
+  - item
+  - gamemode
+  - gameMode
+  - gm
+  - gmc
+  - gms
+  - gma
+  - gmt
+  - fly
+  - effect
+  - enchant
+  - xp
+  - experience
+  - speed
+  - god
+  - heal
+  - feed
+  - vanish
+  - tp
+  - tpa
+  - tpaccept
+  - teleport
+  - setblock
+  - fill
+  - summon
+  - clone
+  - time
+  - weather
+  - difficulty
+  - op
+  - deop
+  - kick
+  - ban
+  - pardon
+  - whitelist
+  - reload
+  - stop
+  - save-all
+  - save-off
+  - save-on

@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  # Build on every commit pushed to every branch and every tag.
+  push:
+    branches:
+      - '**'
+    tags:
+      - '**'
+
+  # Build on every supported PR activity that changes or re-evaluates code.
+  pull_request:
+
+  # Build again when a PR enters GitHub's merge queue.
+  merge_group:
+
+  # Lets you run the exact same verification manually from GitHub web/mobile.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build Java 8 / Spigot 1.8.8
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      - name: Set up Java 8
+        uses: actions/setup-java@v6.0.1
+        with:
+          distribution: temurin
+          java-version: '8'
+          cache: maven
+
+      # Node is not a plugin runtime dependency. It is used only for modern repo tooling checks.
+      - name: Set up current Node.js
+        uses: actions/setup-node@v7.0.1
+        with:
+          node-version: '26'
+          check-latest: true
+          package-manager-cache: false
+
+      - name: Print toolchain versions
+        run: |
+          java -version
+          mvn --version
+          node --version
+          npm --version
+
+      - name: Build plugin
+        run: mvn --batch-mode --no-transfer-progress clean package
+
+      - name: Verify plugin descriptor
+        run: |
+          test -f target/transparent-audit-1.2.0.jar
+          jar tf target/transparent-audit-1.2.0.jar | grep -Fx 'plugin.yml'
+          jar tf target/transparent-audit-1.2.0.jar | grep -F 'com/notgamingop/transparentaudit/TransparentAudit.class'
+
+      - name: Verify Java 8 bytecode
+        run: |
+          major=$(javap -verbose target/classes/com/notgamingop/transparentaudit/TransparentAudit.class | awk '/major version/ {print $3; exit}')
+          test "$major" = "52"
+
+      - name: Upload JAR
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: TransparentAudit-1.2.0-${{ github.run_id }}
+          path: target/transparent-audit-1.2.0.jar
+          if-no-files-found: error

@@ -1,0 +1,138 @@
+name: Release
+
+on:
+  # Normal release path: create/push a tag named vMAJOR.MINOR.PATCH.
+  push:
+    tags:
+      - 'v*.*.*'
+
+  # PC-free release path: start this workflow from GitHub Actions in a browser/mobile app,
+  # enter a version such as v1.2.1, and the workflow creates the tag and release for you.
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag, e.g. v1.2.1'
+        required: true
+        type: string
+      prerelease:
+        description: 'Mark the GitHub Release as a pre-release'
+        required: true
+        default: false
+        type: boolean
+
+env:
+  PLUGIN_VERSION: '1.2.0'
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+  artifact-metadata: write
+
+concurrency:
+  group: release-${{ github.event.inputs.release_tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  prepare-tag:
+    name: Prepare release tag
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout default branch
+        uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Validate release tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag='${{ inputs.release_tag }}'
+          [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "Invalid tag: $tag (expected vMAJOR.MINOR.PATCH)"
+            exit 1
+          }
+          if git rev-parse "$tag" >/dev/null 2>&1; then
+            echo "Tag $tag already exists."
+            exit 1
+          fi
+
+      - name: Create and push tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git tag -a '${{ inputs.release_tag }}' -m 'TransparentAudit ${{ inputs.release_tag }}'
+          git push origin '${{ inputs.release_tag }}'
+
+  release:
+    name: Build and publish release
+    needs: prepare-tag
+    if: always() && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && needs.prepare-tag.result == 'success'))
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout release ref
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.event_name == 'push' && github.ref_name || inputs.release_tag }}
+          fetch-depth: 0
+
+      - name: Set up Java 8
+        uses: actions/setup-java@v6.0.1
+        with:
+          distribution: temurin
+          java-version: '8'
+          cache: maven
+
+      - name: Set up current Node.js
+        uses: actions/setup-node@v7.0.1
+        with:
+          node-version: '26'
+          check-latest: true
+          package-manager-cache: false
+
+      - name: Build plugin
+        run: mvn --batch-mode --no-transfer-progress clean package
+
+      - name: Prepare release files
+        shell: bash
+        run: |
+          set -euo pipefail
+          RELEASE_TAG='${{ github.event_name == 'push' && github.ref_name || inputs.release_tag }}'
+          mkdir -p dist
+          cp target/transparent-audit-${PLUGIN_VERSION}.jar "dist/TransparentAudit-${RELEASE_TAG}.jar"
+          git archive --format=zip --prefix="TransparentAudit-${RELEASE_TAG}/" HEAD -o "dist/TransparentAudit-${RELEASE_TAG}-source.zip"
+          (cd dist && sha256sum * > SHA256SUMS.txt)
+
+      - name: Attest plugin JAR
+        uses: actions/attest@v4.2.2
+        with:
+          subject-path: 'dist/TransparentAudit-*.jar'
+
+      - name: Attest source archive
+        uses: actions/attest@v4.2.2
+        with:
+          subject-path: 'dist/TransparentAudit-*-source.zip'
+
+      - name: Upload release files as workflow artifacts
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: release-${{ github.event_name == 'push' && github.ref_name || inputs.release_tag }}
+          path: dist/*
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.release_tag }}
+          PRERELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease || false }}
+        run: |
+          set -euo pipefail
+          args=("$RELEASE_TAG" dist/* --title "TransparentAudit ${RELEASE_TAG#v}" --generate-notes)
+          if [[ "$PRERELEASE" == "true" ]]; then
+            args+=(--prerelease)
+          fi
+          gh release create "${args[@]}"

@@ -1,0 +1,17 @@
+# Maven
+target/
+
+# Local/manual build output
+build/
+*.class
+*.tmp
+*.log
+
+# IDEs
+.idea/
+.vscode/
+*.iml
+
+# OS files
+.DS_Store
+Thumbs.db
