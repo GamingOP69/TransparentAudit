@@ -42,7 +42,7 @@ jobs:
 
       # Node is not a plugin runtime dependency. It is used only for modern repo tooling checks.
       - name: Set up current Node.js
-        uses: actions/setup-node@v7.0.1
+        uses: actions/setup-node@v7.0.0
         with:
           node-version: '26'
           check-latest: true
